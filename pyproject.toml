@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "medical-mcp-toolkit"
+version = "0.1.0"
+description = "Demo Medical MCP Toolkit with SSE + JSON-RPC tools"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.6",
+  "uvicorn>=0.23",
+  "mcp>=1.17,<2.0",
+  "typing-extensions>=4.8",
+  "fastapi>=0.115",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,32 @@
+# environments
+.venv/
+.env
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# editors
+.vscode/
+.idea/
+
+# packaging / build
+build/
+dist/
+*.egg-info/
+
+# misc
+.DS_Store
+uv.lock
+
+copy *
+copy *.*
+ copy *
+* copy *.*
+* copy *
+* copy.*
