@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/components.schema.json",
+  "$defs": {
+    "Sex": { "type": "string", "enum": ["male","female","intersex","other","unknown"] },
+    "AcuityLevel": { "type": "string", "enum": ["EMERGENT","URGENT","ROUTINE"] },
+    "RiskLevel": { "type": "string", "enum": ["LOW","MODERATE","HIGH","CRITICAL"] },
+    "InteractionSeverity": { "type": "string", "enum": ["minor","moderate","major","contraindicated"] },
+    "PregnancyCategory": { "type": "string", "enum": ["A","B","C","D","X","Unknown"] },
+
+    "Patient": {
+      "type": "object",
+      "required": ["patient_id","age","sex"],
+      "properties": {
+        "patient_id": { "type": "string" },
+        "age": { "type": "integer", "minimum": 0 },
+        "sex": { "$ref": "#/$defs/Sex" },
+        "pregnant": { "type": "boolean", "default": false },
+        "breastfeeding": { "type": "boolean", "default": false },
+        "insurance_id": { "type": "string" },
+        "risk_flags": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "meta": { "type": "object", "additionalProperties": true }
+      },
+      "additionalProperties": false
+    },
+
+    "VitalSigns": {
+      "type": "object",
+      "required": ["timestamp_iso"],
+      "properties": {
+        "timestamp_iso": { "type": "string", "format": "date-time" },
+        "systolic_mmHg": { "type": "integer", "minimum": 30, "maximum": 300 },
+        "diastolic_mmHg": { "type": "integer", "minimum": 20, "maximum": 200 },
+        "heart_rate_bpm": { "type": "integer", "minimum": 20, "maximum": 250 },
+        "resp_rate_min": { "type": "integer", "minimum": 5, "maximum": 60 },
+        "temperature_c": { "type": "number", "minimum": 30, "maximum": 45 },
+        "spo2_percent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "weight_kg": { "type": "number", "minimum": 0 },
+        "height_cm": { "type": "number", "minimum": 0 },
+        "bmi": { "type": "number", "minimum": 0 },
+        "serum_creatinine_mg_dl": { "type": "number", "minimum": 0 },
+        "egfr_ml_min_1_73m2": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+
+    "Condition": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "code": { "type": "string", "description": "ICD-10/SNOMED if available" },
+        "onset_date": { "type": "string", "format": "date" }
+      },
+      "additionalProperties": false
+    },
+
+    "Allergy": {
+      "type": "object",
+      "required": ["substance"],
+      "properties": {
+        "substance": { "type": "string" },
+        "reaction": { "type": "string" },
+        "severity": { "type": "string", "enum": ["mild","moderate","severe"] },
+        "note": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "Medication": {
+      "type": "object",
+      "required": ["drug_name"],
+      "properties": {
+        "drug_name": { "type": "string" },
+        "dose": { "type": "string" },
+        "route": { "type": "string" },
+        "frequency": { "type": "string" },
+        "start_date": { "type": "string", "format": "date" },
+        "end_date": { "type": "string", "format": "date" },
+        "prn": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+
+    "MedicalProfile": {
+      "type": "object",
+      "properties": {
+        "conditions": { "type": "array", "items": { "$ref": "#/$defs/Condition" } },
+        "allergies": { "type": "array", "items": { "$ref": "#/$defs/Allergy" } },
+        "medications": { "type": "array", "items": { "$ref": "#/$defs/Medication" } }
+      },
+      "additionalProperties": false
+    },
+
+    "DrugInformation": {
+      "type": "object",
+      "required": ["drug_name"],
+      "properties": {
+        "drug_name": { "type": "string" },
+        "brand_names": { "type": "array", "items": { "type": "string" } },
+        "drug_class": { "type": "string" },
+        "mechanism": { "type": "string" },
+        "atc_codes": { "type": "array", "items": { "type": "string" } },
+        "indications": { "type": "array", "items": { "type": "string" } },
+        "contraindications": { "type": "array", "items": { "type": "string" } },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "pregnancy_category": { "$ref": "#/$defs/PregnancyCategory" },
+        "lactation": { "type": "string" },
+        "renal_adjustment": { "type": "string" },
+        "hepatic_adjustment": { "type": "string" },
+        "common_adverse_effects": { "type": "array", "items": { "type": "string" } },
+        "serious_adverse_effects": { "type": "array", "items": { "type": "string" } },
+        "references": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+
+    "Interaction": {
+      "type": "object",
+      "required": ["primary_drug","interacting_drug","severity"],
+      "properties": {
+        "primary_drug": { "type": "string" },
+        "interacting_drug": { "type": "string" },
+        "severity": { "$ref": "#/$defs/InteractionSeverity" },
+        "mechanism": { "type": "string" },
+        "clinical_effect": { "type": "string" },
+        "management": { "type": "string" },
+        "references": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+
+    "InteractionSet": {
+      "type": "object",
+      "properties": {
+        "interactions": { "type": "array", "items": { "$ref": "#/$defs/Interaction" } },
+        "overall_risk": { "$ref": "#/$defs/RiskLevel" }
+      },
+      "additionalProperties": false
+    },
+
+    "AlternativeTreatment": {
+      "type": "object",
+      "required": ["drug_name","rationale"],
+      "properties": {
+        "drug_name": { "type": "string" },
+        "rationale": { "type": "string" },
+        "notes": { "type": "string" },
+        "suitability": { "type": "array", "items": { "type": "string" } },
+        "references": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+
+    "PatientContext": {
+      "type": "object",
+      "required": ["age","sex"],
+      "properties": {
+        "age": { "type": "integer", "minimum": 0 },
+        "sex": { "$ref": "#/$defs/Sex" },
+        "pregnant": { "type": "boolean" },
+        "breastfeeding": { "type": "boolean" },
+        "renal_impairment_stage": { "type": "string", "enum": ["none","mild","moderate","severe","dialysis"] },
+        "hepatic_impairment_child_pugh": { "type": "string", "enum": ["none","A","B","C"] },
+        "comorbidities": { "type": "array", "items": { "type": "string" } },
+        "allergies": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+
+    "ContraindicationDetail": {
+      "type": "object",
+      "properties": {
+        "reason": { "type": "string" },
+        "severity": { "$ref": "#/$defs/InteractionSeverity" },
+        "reference": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "ContraindicationReport": {
+      "type": "object",
+      "properties": {
+        "absolute": { "type": "array", "items": { "type": "string" } },
+        "relative": { "type": "array", "items": { "type": "string" } },
+        "details":  { "type": "array", "items": { "$ref": "#/$defs/ContraindicationDetail" } }
+      },
+      "additionalProperties": false
+    },
+
+    "ClinicalCalcInput": {
+      "type": "object",
+      "required": ["age","sex","weight_kg","height_cm","serum_creatinine_mg_dl"],
+      "properties": {
+        "age": { "type": "integer", "minimum": 0 },
+        "sex": { "$ref": "#/$defs/Sex" },
+        "weight_kg": { "type": "number", "minimum": 0 },
+        "height_cm": { "type": "number", "minimum": 0 },
+        "serum_creatinine_mg_dl": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+
+    "ClinicalCalcOutput": {
+      "type": "object",
+      "properties": {
+        "bmi": { "type": "number", "minimum": 0 },
+        "bsa_m2": { "type": "number", "minimum": 0 },
+        "crcl_cockcroft_gault_ml_min": { "type": "number", "minimum": 0 },
+        "egfr_ckdepi_ml_min_1_73m2": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+
+    "TriageInput": {
+      "type": "object",
+      "required": ["age","sex","symptoms","duration_text"],
+      "properties": {
+        "age": { "type": "integer", "minimum": 0 },
+        "sex": { "$ref": "#/$defs/Sex" },
+        "symptoms": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "duration_text": { "type": "string" },
+        "vitals": { "$ref": "#/$defs/VitalSigns" },
+        "red_flags": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+
+    "TriageResult": {
+      "type": "object",
+      "required": ["acuity","recommended_next_steps","disclaimer"],
+      "properties": {
+        "acuity": { "$ref": "#/$defs/AcuityLevel" },
+        "concerns": { "type": "array", "items": { "type": "string" } },
+        "recommended_next_steps": { "type": "array", "items": { "type": "string" } },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "disclaimer": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "KBHit": {
+      "type": "object",
+      "required": ["title","snippet","score"],
+      "properties": {
+        "title": { "type": "string" },
+        "snippet": { "type": "string" },
+        "score": { "type": "number" },
+        "source_url": { "type": "string", "format": "uri" }
+      },
+      "additionalProperties": false
+    },
+
+    "AppointmentRequest": {
+      "type": "object",
+      "required": ["patient_id","specialty","earliest_date"],
+      "properties": {
+        "patient_id": { "type": "string" },
+        "specialty": { "type": "string" },
+        "earliest_date": { "type": "string", "format": "date" },
+        "location": { "type": "string" },
+        "preferences": { "type": "object", "additionalProperties": true }
+      },
+      "additionalProperties": false
+    },
+
+    "AppointmentConfirmation": {
+      "type": "object",
+      "required": ["confirmation_id","slot","provider","location"],
+      "properties": {
+        "confirmation_id": { "type": "string" },
+        "slot": {
+          "type": "object",
+          "required": ["start_iso","end_iso"],
+          "properties": {
+            "start_iso": { "type": "string", "format": "date-time" },
+            "end_iso":   { "type": "string", "format": "date-time" }
+          }
+        },
+        "provider": { "type": "string" },
+        "location": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "Patient360": {
+      "type": "object",
+      "required": ["patient","profile"],
+      "properties": {
+        "patient": { "$ref": "#/$defs/Patient" },
+        "profile": { "$ref": "#/$defs/MedicalProfile" },
+        "latest_vitals": { "$ref": "#/$defs/VitalSigns" },
+        "active_warnings": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+
+    "StandardError": {
+      "type": "object",
+      "required": ["code","message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "details": { "type": "object", "additionalProperties": true }
+      },
+      "additionalProperties": false
+    }
+  }
+}

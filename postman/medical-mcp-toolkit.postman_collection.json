@@ -1,0 +1,57 @@
+{
+  "info": {
+    "name": "medical-mcp-toolkit",
+    "_postman_id": "c7dc2e5c-0000-4f1a-baaa-000000000001",
+    "description": "Postman collection for medical-mcp-toolkit REST endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "token", "value": "dev-token" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+      }
+    },
+    {
+      "name": "Schema",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+        ],
+        "url": { "raw": "{{baseUrl}}/schema", "host": ["{{baseUrl}}"], "path": ["schema"] }
+      }
+    },
+    {
+      "name": "Tools",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+        ],
+        "url": { "raw": "{{baseUrl}}/tools", "host": ["{{baseUrl}}"], "path": ["tools"] }
+      }
+    },
+    {
+      "name": "Invoke triageSymptoms",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"tool\": \"triageSymptoms\",\n  \"args\": {\n    \"age\": 45,\n    \"sex\": \"male\",\n    \"symptoms\": [\"chest pain\", \"sweating\"],\n    \"duration_text\": \"2 hours\"\n  }\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/invoke", "host": ["{{baseUrl}}"], "path": ["invoke"] }
+      }
+    }
+  ]
+}
