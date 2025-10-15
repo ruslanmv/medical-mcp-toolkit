@@ -6,7 +6,7 @@ Production-ready **MCP-style** server that exposes clinical tools for **IBM wats
   <img alt="Python" src="https://img.shields.io/badge/Python-3.11-3776AB.svg?logo=python&logoColor=white">
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi&logoColor=white">
   <img alt="uv" src="https://img.shields.io/badge/uv-managed-4B8BBE.svg">
-  <img alt="License" src="https://img.shields.io/badge/License-MIT-blue.svg">
+  <img alt="License" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg">
   <a href="https://github.com/ruslanmv/medical-mcp-toolkit"><img alt="Repo" src="https://img.shields.io/badge/github-repo-24292f.svg?logo=github"></a>
 </p>
 
@@ -26,6 +26,7 @@ Production-ready **MCP-style** server that exposes clinical tools for **IBM wats
 * **Containerized** (Dockerfile). Structured logs to stdout.
 * **Postman** collection for one-click testing.
 * **Mermaid architecture** (kept exactly as provided below).
+**PostgreSQL backend** with production-ready schema aligned to the JSON Schema, seeded demo data, `Dockerfile.db`, and `Makefile` DB helpers (`db-up`, `db-down`, `db-logs`, `db-reset`).
 
 ---
 
@@ -99,12 +100,19 @@ graph TD
 git clone https://github.com/ruslanmv/medical-mcp-toolkit
 cd medical-mcp-toolkit
 
-# 2) Create venv and install deps (uv-managed)
+# 2) Create your environment file
+cp .env.example .env
+# Edit .env and set BEARER_TOKEN, and (optionally) DATABASE_URL
+
+# 3) (Optional) Start Postgres DB with schema + seed data
+make db-up
+# Verify: make db-logs   or   docker ps
+
+# 4) Create venv and install deps (uv-managed)
 make install   # or: make uv-install
 
-# 3) Run the HTTP server (FastAPI on port 9090)
-export BEARER_TOKEN=dev-token
-uv run uvicorn server:app --host 0.0.0.0 --port 9090
+# 5) Run the HTTP server (FastAPI on port 9090)
+make run-api   # (equivalent to: uv run uvicorn server:app --host 0.0.0.0 --port 9090)
 ```
 
 Typical startup log (example):
@@ -241,6 +249,55 @@ asyncio.run(run_mcp_async('stdio'))"
 
 ---
 
+## 🗄️ Database (Dockerized PostgreSQL)
+
+**What you get:**
+
+* `Dockerfile.db` — production-grade Postgres image builder.
+* `db/10_init.sql` — full schema (patients, vitals, conditions, allergies, meds; drugs, interactions; appointments; audit).
+* `db/20_seed.sql` — demo data (patients `demo-001`, `demo-002`, and basic drug KB).
+* Makefile helpers: `db-up`, `db-down`, `db-logs`, `db-reset`.
+
+**Start DB:**
+
+```bash
+make db-up
+# or direct script:
+scripts/create_db.sh
+```
+
+**Manage DB:**
+
+```bash
+make db-logs    # tail logs
+make db-down    # stop & remove container
+make db-reset   # recreate fresh DB (drops data)
+```
+
+**Default DSN (matches `.env.example`):**
+
+```
+postgresql://mcp_user:mcp_password@localhost:5432/medical_db
+```
+
+---
+
+## 🔧 Scripts
+
+* `scripts/mcp_curl_demo.sh` — cross-platform demo for **both** HTTP and SSE JSON-RPC.
+
+Examples:
+
+```bash
+# HTTP mode (health, tools, invoke)
+MODE=http TOKEN=dev-token ./scripts/mcp_curl_demo.sh
+
+# SSE JSON-RPC mode (initialize, tools/list, tools/call triage)
+MODE=sse TOKEN=dev-token CALL_TOOL=triageSymptoms ./scripts/mcp_curl_demo.sh
+```
+
+---
+
 ## 🛠️ Development
 
 **Environment (uv-managed):**
@@ -256,7 +313,8 @@ make test          # pytest
 
 ```bash
 export BEARER_TOKEN=dev-token
-uv run uvicorn server:app --host 0.0.0.0 --port 9090
+make run-api
+# (equivalent to: uv run uvicorn server:app --host 0.0.0.0 --port 9090)
 ```
 
 **Run MCP SSE (dev):**
@@ -284,11 +342,26 @@ make docker-logs
 make docker-stop
 ```
 
+**Build DB image directly (optional):**
+
+```bash
+docker build -t medical-db -f Dockerfile.db .
+docker run -d --name medical-db-container \
+  -e POSTGRES_USER=mcp_user \
+  -e POSTGRES_PASSWORD=mcp_password \
+  -e POSTGRES_DB=medical_db \
+  -p 5432:5432 \
+  medical-db
+```
+
 ---
 
 ## ⚙️ Configuration (env)
 
 * `BEARER_TOKEN` — required for auth in non-dev environments.
+* `DATABASE_URL` — PostgreSQL DSN (optional; if unset, the demo uses in-memory data).
+
+  * Default (see `.env.example`): `postgresql://mcp_user:mcp_password@localhost:5432/medical_db`
 * `MCP_LOG_LEVEL` — log level for MCP parts (`INFO`, `DEBUG`, …).
 * `UVICORN_LOG_LEVEL` — log level for Uvicorn (`info`, `debug`, …).
 * (Adapters, when you wire real systems)
@@ -338,7 +411,7 @@ Set variables:
 
 ## 📜 License
 
-MIT — see `LICENSE`.
+Apache 2.0 — see `LICENSE`.
 
 ---
 

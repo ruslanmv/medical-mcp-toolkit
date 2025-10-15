@@ -1,0 +1,8 @@
+# Dockerfile.db — PostgreSQL with schema + seed for medical-mcp-toolkit
+FROM postgres:14-alpine
+
+WORKDIR /app
+
+# Copy SQL init scripts (executed once at first container start, in order)
+COPY db/10_init.sql  /docker-entrypoint-initdb.d/10_init.sql
+COPY db/20_seed.sql  /docker-entrypoint-initdb.d/20_seed.sql
