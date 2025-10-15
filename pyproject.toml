@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -16,5 +16,46 @@ dependencies = [
   "fastapi>=0.115",
 ]
 
+# Optional dev tools installed via: uv sync --all-extras  (or configured by default in uv)
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.6.9",
+  "black>=24.8.0",
+  "pytest>=8.0",
+  "httpx>=0.27",   # handy for tests/integration
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# ---- Ruff (formatter + linter) ----
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["build", "dist", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]   # basic errors, flakes, imports, pyupgrade, bugbear
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ---- Pytest ----
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-q"
+testpaths = ["tests"]
+
+# ---- Uvicorn convenience (optional) ----
+[tool.uvicorn]
+factory = false
+reload = true
+host = "127.0.0.1"
+port = 9090
+
+# ---- uv configuration (optional) ----
+# uv will create .venv and sync dependencies from this file.
+[tool.uv]
+# Allow uv to automatically create and use a local .venv
+managed = true

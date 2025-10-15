@@ -1,0 +1,30 @@
+2025-10-15 10:09:19,973 INFO [mcp_server] [registry] 12 tools registered: calcClinicalScores, getDrugAlternatives, getDrugContraindications, getDrugInfo, getDrugInteractions, getPatient, getPatient360, getPatientMedicalProfile, getPatientVitals, scheduleAppointment, searchMedicalKB, triageSymptoms
+[mcp] background SSE...
+2025-10-15 10:09:20,017 INFO [mcp_server] [boot] transport=sse host=0.0.0.0 port=9091
+2025-10-15 10:09:20,040 INFO [mcp_server] [boot] FastMCP instance created: <mcp.server.fastmcp.server.FastMCP object at 0x76175d9734d0>
+2025-10-15 10:09:20,061 INFO [mcp_server] [boot] 12 tools registered with FastMCP: calcClinicalScores, getDrugAlternatives, getDrugContraindications, getDrugInfo, getDrugInteractions, getPatient, getPatient360, getPatientMedicalProfile, getPatientVitals, scheduleAppointment, searchMedicalKB, triageSymptoms
+2025-10-15 10:09:20,065 INFO [mcp_server] [boot] transport=sse host=0.0.0.0 port=9091
+2025-10-15 10:09:20,070 INFO [mcp_server] [sse] instance_runner=True can_control_message_path=False
+2025-10-15 10:09:20,072 INFO [mcp_server] [sse] building ASGI app with kwargs={}
+2025-10-15 10:09:20,074 INFO [mcp_server] [sse] effective endpoints: GET /sse   POST /messages/
+2025-10-15 10:09:20,076 INFO [mcp_server] [sse] starting uvicorn (level=info) ...
+INFO:     Started server process [7914]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:9091 (Press CTRL+C to quit)
+INFO:     127.0.0.1:39602 - "GET / HTTP/1.1" 404 Not Found
+2025-10-15 10:09:32,221 INFO [mcp_server.asgi] [http] GET / -> 404
+INFO:     127.0.0.1:39602 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+2025-10-15 10:09:32,356 INFO [mcp_server.asgi] [http] GET /favicon.ico -> 404
+INFO:     127.0.0.1:44176 - "GET /sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44188 - "POST /messages/?session_id=65bcb24faa7440c1b8989913914f6a09 HTTP/1.1" 202 Accepted
+2025-10-15 10:09:40,121 INFO [mcp_server.asgi] [http] POST /messages/?session_id=65bcb24faa7440c1b8989913914f6a09 -> 202
+INFO:     127.0.0.1:39608 - "GET /docs HTTP/1.1" 404 Not Found
+2025-10-15 10:09:40,772 INFO [mcp_server.asgi] [http] GET /docs -> 404
+INFO:     127.0.0.1:39612 - "GET / HTTP/1.1" 404 Not Found
+2025-10-15 10:09:47,702 INFO [mcp_server.asgi] [http] GET / -> 404
+2025-10-15 10:09:52,327 INFO [mcp_server.asgi] [http] GET /sse -> 200
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [7914]
