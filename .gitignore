@@ -30,3 +30,5 @@ copy *.*
 * copy *.*
 * copy *
 * copy.*
+ copy*
+Dockerfile copy
