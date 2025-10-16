@@ -2,15 +2,16 @@
 # ==============================================================================
 # mcp_curl_demo.sh — Production-ready curl demo for medical-mcp-toolkit
 #
-# Cross-platform: works on Linux/macOS and Windows (Git Bash).
+# Cross-platform: Linux/macOS + Windows (Git Bash).
+#
 # Demonstrates BOTH:
 #   1) SSE JSON-RPC flow (MCP)   → MODE=sse  (default)
 #   2) HTTP REST smoke tests      → MODE=http
 #
-# Customize via environment variables (all optional):
-#   MODE=sse|http
-#   BASE=http://localhost:9090
-#   TOKEN=dev-token
+# Environment variables (optional):
+#   MODE=sse|http                 # which demo to run (default: sse)
+#   BASE=http://localhost:9090    # server base
+#   TOKEN=dev-token               # bearer token (if your server enforces auth)
 #
 #   # Tool call customization
 #   CALL_TOOL=triageSymptoms|calcClinicalScores|getPatient|getPatient360|getDrugInfo|none
@@ -19,21 +20,17 @@
 #
 #   # SSE (MCP) options
 #   SSE_PATH=/sse
-#   SSE_TIMEOUT=30
+#   SSE_TIMEOUT=30                # not heavily used now (we keep reader open)
 #   PROTOCOL_VERSION=2024-11-05
 #   DEBUG=0                       # 1 = curl -v
-#   RETRY_TOGGLE_TRAILING_SLASH=1 # Try toggling trailing slash on 404
-#   RETRY_BASE_MESSAGES=1         # Try /messages if /sse/messages 404s
+#   RETRY_TOGGLE_TRAILING_SLASH=1 # toggle trailing / on 404
+#   RETRY_BASE_MESSAGES=1         # retry /messages if /sse/messages 404s
+#   KEEP_OPEN=1                   # keep SSE reader alive at end (Ctrl+C to exit)
 #
 # Usage:
-#   # Run default SSE triage demo
 #   ./scripts/mcp_curl_demo.sh
-#
-#   # Run SSE demo to fetch a patient record
+#   MODE=http ./scripts/mcp_curl_demo.sh
 #   CALL_TOOL=getPatient PATIENT_KEY=demo-002 ./scripts/mcp_curl_demo.sh
-#
-#   # Run HTTP smoke test, invoking the getDrugInfo tool
-#   MODE=http CALL_TOOL=getDrugInfo DRUG_NAME=Aspirin ./scripts/mcp_curl_demo.sh
 # ==============================================================================
 
 set -Eeuo pipefail
@@ -58,17 +55,17 @@ PROTOCOL_VERSION="${PROTOCOL_VERSION:-2024-11-05}"
 DEBUG="${DEBUG:-0}"
 RETRY_TOGGLE_TRAILING_SLASH="${RETRY_TOGGLE_TRAILING_SLASH:-1}"
 RETRY_BASE_MESSAGES="${RETRY_BASE_MESSAGES:-1}"
+KEEP_OPEN="${KEEP_OPEN:-1}"
 
 # ---------------------------
 # Helpers
 # ---------------------------
 have_cmd(){ command -v "$1" >/dev/null 2>&1; }
 
-# Pretty-print JSON if jq or python is available; otherwise just cat.
 pretty(){
+  # Pretty-print JSON if jq or python is available; otherwise just cat.
   if have_cmd jq; then
     local buf; buf="$(cat || true)"
-    # If it's JSON, pretty print; else output raw.
     if printf '%s' "$buf" | jq . >/dev/null 2>&1; then
       printf '%s' "$buf" | jq .
     else
@@ -112,6 +109,7 @@ SSE-specific:
   DEBUG=0
   RETRY_TOGGLE_TRAILING_SLASH=1
   RETRY_BASE_MESSAGES=1
+  KEEP_OPEN=1   # keep the SSE reader running at the end (Ctrl+C to stop)
 USAGE
 }
 
@@ -159,13 +157,9 @@ http_smoke(){
   hr
 
   say "→ POST /invoke ${CALL_TOOL}"
-
   case "${CALL_TOOL}" in
     triageSymptoms)
-      payload='{
-        "tool": "triageSymptoms",
-        "args": { "age": 45, "sex": "male", "symptoms": ["chest pain","sweating"], "duration_text": "2 hours" }
-      }'
+      payload='{"tool":"triageSymptoms","args":{"age":45,"sex":"male","symptoms":["chest pain","sweating"],"duration_text":"2 hours"}}'
       ;;
     getPatient)
       payload="{\"tool\":\"getPatient\",\"args\":{\"patient_key\":\"${PATIENT_KEY}\"}}"
@@ -201,10 +195,10 @@ http_smoke(){
 }
 
 # -----------------------------------------
-# SSE JSON-RPC mode
+# SSE JSON-RPC mode (keeps reader open)
 # -----------------------------------------
 sse_jsonrpc(){
-  local BASE_URL HDR_AUTH CURL_V
+  local BASE_URL HDR_AUTH CURL_V SSE_LOG SESSION_PATH_OR_URL SESSION_URL SSE_PID LISTENER_PID
 
   BASE_URL="${BASE%/}${SSE_PATH}"
   HDR_AUTH=()
@@ -212,6 +206,7 @@ sse_jsonrpc(){
   CURL_V=()
   [[ "$DEBUG" == "1" ]] && CURL_V=(-v)
 
+  # Utilities for POST retries
   toggle_trailing_slash(){
     local url="$1" base qs
     if [[ "$url" == *\?* ]]; then
@@ -222,41 +217,46 @@ sse_jsonrpc(){
       if [[ "$url" == */ ]]; then printf '%s' "${url%/}"; else printf '%s/' "$url"; fi
     fi
   }
-
-  # Replace '/sse/messages' base with '/messages' (preserve query string).
   swap_to_root_messages(){
     local url="$1" base qs
-    if [[ "$url" == *\?* ]]; then
-      base="${url%%\?*}"; qs="${url#*\?}"
-    else
-      base="$url"; qs=""
-    fi
-    base="${base%/}"  # strip trailing /
+    if [[ "$url" == *\?* ]]; then base="${url%%\?*}"; qs="${url#*\?}"; else base="$url"; qs=""; fi
+    base="${base%/}"
     base="${base/\/sse\/messages/\/messages}"
     if [[ -n "$qs" ]]; then printf '%s?%s' "$base" "$qs"; else printf '%s' "$base"; fi
   }
 
-  get_session_url(){
-    local endpoint
-    set +o pipefail
-    endpoint="$(
-      curl "${CURL_V[@]}" -s -N --no-buffer --max-time "${SSE_TIMEOUT}" \
-           -H 'Accept: text/event-stream' "${HDR_AUTH[@]}" "${BASE_URL}" 2>/dev/null \
-      | awk -F': ' '/^data: /{sub(/^data: /,"");gsub(/\r$/,"");print;exit;}'
-    )"
-    local curl_status=${PIPESTATUS[0]}
-    set -o pipefail
-    [[ ${curl_status} -ne 0 && -z "${endpoint}" ]] && return ${curl_status}
-    printf '%s' "${endpoint}"
-  }
+  # Start long-lived SSE reader to a growing log file
+  SSE_LOG="$(mktemp 2>/dev/null || printf '.mcp_sse_%s.log' "$$")"
+  say "→ Opening SSE at ${BASE_URL} (reader stays open; results will appear below)..."
+  ( curl "${CURL_V[@]}" -s -N --no-buffer \
+        -H 'Accept: text/event-stream' "${HDR_AUTH[@]}" "${BASE_URL}" \
+      || true ) > "${SSE_LOG}" &
+  SSE_PID=$!
 
-  say "→ Opening SSE at ${BASE_URL} to get session writer URL..."
-  local SESSION_PATH_OR_URL
-  SESSION_PATH_OR_URL="$(get_session_url || true)"
-  [[ -z "${SESSION_PATH_OR_URL}" ]] && { say "❌ No SSE endpoint returned a writer URL"; exit 1; }
+  cleanup(){
+    # stop background processes and remove temp files
+    [[ -n "${LISTENER_PID-}" ]] && kill "${LISTENER_PID}" >/dev/null 2>&1 || true
+    [[ -n "${SSE_PID-}" ]] && kill "${SSE_PID}" >/dev/null 2>&1 || true
+    [[ -f "${SSE_LOG-}" ]] && rm -f -- "${SSE_LOG}" || true
+  }
+  trap cleanup EXIT INT TERM
+
+  # Wait for the first data: line (writer URL)
+  for _ in $(seq 1 300); do
+    if grep -q '^data: ' "${SSE_LOG}" 2>/dev/null; then
+      break
+    fi
+    sleep 0.1
+  done
+
+  # Extract writer URL
+  SESSION_PATH_OR_URL="$(awk -F': ' '/^data: /{ sub(/^data: /,""); gsub(/\r$/,""); print; exit }' "${SSE_LOG}" || true)"
+  if [[ -z "${SESSION_PATH_OR_URL}" ]]; then
+    say "❌ No writer URL received from SSE."
+    exit 1
+  fi
 
   # Normalize to absolute URL
-  local SESSION_URL
   if [[ "${SESSION_PATH_OR_URL}" =~ ^https?:// ]]; then
     SESSION_URL="${SESSION_PATH_OR_URL}"
   elif [[ "${SESSION_PATH_OR_URL}" == /* ]]; then
@@ -268,20 +268,37 @@ sse_jsonrpc(){
   say "✅ SSE writer URL: ${SESSION_URL}"
   hr
 
-  # POST JSON with retries and slash toggles
+  # Live listener: follow SSE_LOG and print each subsequent "data: ..." line payload
+  (
+    tail -n +1 -F "${SSE_LOG}" 2>/dev/null \
+    | awk '/^data: /{ sub(/^data: /,""); gsub(/\r$/,""); print; fflush(); }' \
+    | while IFS= read -r payload; do
+        # Pretty print entire event if possible
+        if have_cmd jq && printf '%s' "$payload" | jq . >/dev/null 2>&1; then
+          printf '%s\n' "$payload" | jq .
+          # If this is tools/list reply (id==1), print just tool names
+          printf '%s\n' "$payload" \
+            | jq -r 'select(.id==1 and .result and .result.tools) | .result.tools[]?.name' 2>/dev/null \
+            | awk 'NF{print "• " $0}'
+        else
+          printf '%s\n' "$payload"
+        fi
+      done
+  ) &
+  LISTENER_PID=$!
+
+  # POST JSON with retries and slash toggles (SSE writer returns typically 202)
   curl_post_json(){
     local url="$1" json="$2"
     local body used_url code
-    body="$(mktemp 2>/dev/null || printf '%s' ".mcp_curl_body.$$")"
+    body="$(mktemp 2>/dev/null || printf '.mcp_curl_body_%s' "$$")"
     trap '[[ -n "${body-}" && -f "${body-}" ]] && rm -f -- "${body}" || true' RETURN
 
     used_url="$url"
-    # -L follows 307/308 so we land on /messages/ if server redirects
     code="$(curl "${CURL_V[@]}" -sS -L -o "$body" -w "%{http_code}" \
                 -X POST "$used_url" -H 'Content-Type: application/json' \
                 "${HDR_AUTH[@]}" -d "$json")"
 
-    # 1) trailing-slash retry (only if still 404 after following redirects)
     if [[ "$code" == "404" && "$RETRY_TOGGLE_TRAILING_SLASH" == "1" ]]; then
       local alt; alt="$(toggle_trailing_slash "$used_url")"
       say "↻ 404 from $used_url — retrying $alt"
@@ -291,7 +308,6 @@ sse_jsonrpc(){
                   "${HDR_AUTH[@]}" -d "$json")"
     fi
 
-    # 2) base-path retry: /sse/messages → /messages (preserve qs)
     if [[ "$code" == "404" && "$RETRY_BASE_MESSAGES" == "1" ]]; then
       local alt2; alt2="$(swap_to_root_messages "$url")"
       if [[ "$alt2" != "$url" ]]; then
@@ -300,7 +316,6 @@ sse_jsonrpc(){
         code="$(curl "${CURL_V[@]}" -sS -L -o "$body" -w "%{http_code}" \
                     -X POST "$used_url" -H 'Content-Type: application/json' \
                     "${HDR_AUTH[@]}" -d "$json")"
-        # If that ALSO 404s, try toggling slash on the /messages variant
         if [[ "$code" == "404" ]]; then
           local alt2b; alt2b="$(toggle_trailing_slash "$used_url")"
           say "↻ 404 from $used_url — retrying $alt2b"
@@ -312,7 +327,6 @@ sse_jsonrpc(){
       fi
     fi
 
-    # If we finally succeeded, persist the working URL for subsequent calls
     if [[ "$code" =~ ^2[0-9][0-9]$ ]]; then
       SESSION_URL="$used_url"
     fi
@@ -323,60 +337,60 @@ sse_jsonrpc(){
 
   rpc(){ curl_post_json "${SESSION_URL}" "$1"; }
 
+  # Initialize session
   say "→ JSON-RPC: initialize"
-  rpc "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"${PROTOCOL_VERSION}\",\"capabilities\":{},\"clientInfo\":{\"name\":\"curl\",\"version\":\"8\"}}}" | pretty
-  
-  # ✅ FIX: Add a delay to allow the server to process initialization.
-  sleep 1
+  rpc "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"${PROTOCOL_VERSION}\",\"capabilities\":{},\"clientInfo\":{\"name\":\"curl\",\"version\":\"8\"}}}" >/dev/null
+  sleep 0.2
   hr
 
+  # List tools
+  # FIX #1: Changed params from {} to null, as some servers are strict.
   say "→ JSON-RPC: tools/list"
-  local TOOLS_JSON
-  TOOLS_JSON="$(rpc '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}')"
-  printf '%s' "$TOOLS_JSON" | pretty
-
-  # ✅ FIX: Add a small delay before the next call.
-  sleep 1
+  rpc '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":null}' >/dev/null
+  sleep 0.2
   hr
 
-  if have_cmd jq; then
-    say "Tools available:"
-    printf '%s' "$TOOLS_JSON" | jq -r '.result.tools[]?.name' 2>/dev/null || say "(Could not parse tools list)"
-    hr
-  fi
-
+  # Optional example tool call
+  # FIX #2: Changed "arguments" key to "args" to match server expectation.
   case "${CALL_TOOL}" in
     triageSymptoms)
       say "→ JSON-RPC: tools/call triageSymptoms"
-      rpc '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"triageSymptoms","arguments":{"age":45,"sex":"male","symptoms":["chest pain","sweating"],"duration_text":"2 hours"}}}' | pretty
+      rpc '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"triageSymptoms","args":{"age":45,"sex":"male","symptoms":["chest pain","sweating"],"duration_text":"2 hours"}}}' >/dev/null
       ;;
     calcClinicalScores)
       say "→ JSON-RPC: tools/call calcClinicalScores"
-      rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"calcClinicalScores","arguments":{"age":40,"sex":"male","weight_kg":80,"height_cm":180,"serum_creatinine_mg_dl":1.0}}}' | pretty
+      rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"calcClinicalScores","args":{"age":40,"sex":"male","weight_kg":80,"height_cm":180,"serum_creatinine_mg_dl":1.0}}}' >/dev/null
       ;;
     getPatient)
       say "→ JSON-RPC: tools/call getPatient (key=${PATIENT_KEY})"
-      rpc "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"getPatient\",\"arguments\":{\"patient_key\":\"${PATIENT_KEY}\"}}}" | pretty
+      rpc "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"getPatient\",\"args\":{\"patient_key\":\"${PATIENT_KEY}\"}}}" >/dev/null
       ;;
     getPatient360)
       say "→ JSON-RPC: tools/call getPatient360 (key=${PATIENT_KEY})"
-      rpc "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"getPatient360\",\"arguments\":{\"patient_key\":\"${PATIENT_KEY}\"}}}" | pretty
+      rpc "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"getPatient360\",\"args\":{\"patient_key\":\"${PATIENT_KEY}\"}}}" >/dev/null
       ;;
     getDrugInfo)
       say "→ JSON-RPC: tools/call getDrugInfo (drug=${DRUG_NAME})"
-      rpc "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"getDrugInfo\",\"arguments\":{\"drug_name\":\"${DRUG_NAME}\"}}}" | pretty
+      rpc "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"getDrugInfo\",\"args\":{\"drug_name\":\"${DRUG_NAME}\"}}}" >/dev/null
       ;;
     none|"")
       say "Skipping tools/call (CALL_TOOL is 'none' or unset)."
       ;;
     *)
-      say "⚠️  CALL_TOOL '${CALL_TOOL}' is not a built-in example in this script."
-      say "    The script will not attempt a tools/call RPC."
+      say "⚠️  CALL_TOOL '${CALL_TOOL}' is not a built-in example in this script; skipping extra tools/call."
       ;;
   esac
   hr
 
-  say "✅ SSE JSON-RPC flow complete."
+  say "✅ SSE JSON-RPC flow started. Results are streaming above."
+  if [[ "${KEEP_OPEN}" == "1" ]]; then
+    say "ℹ️  Press Ctrl+C to stop the SSE listener."
+    # Wait indefinitely for background listener; the trap will handle cleanup.
+    wait
+  else
+    # Give a brief window for results to print, then exit cleanly
+    sleep 2
+  fi
 }
 
 # ---------------------------
