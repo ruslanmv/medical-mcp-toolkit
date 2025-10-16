@@ -127,7 +127,7 @@ jobs:
         run: |
           REF="$(echo "${{ steps.meta.outputs.tags }}" | head -n1)"
           docker run --rm "$REF" python -c "import fastapi, uvicorn; print('pydeps-ok')"
-          docker run --rm "$REF" python -c "import importlib, pkgutil; importlib.import_module('medical_mcp_toolkit'); print('pkg-ok')"
+          docker run --rm "$REF" python -c "import importlib; importlib.import_module('medical_mcp_toolkit'); print('pkg-ok')"
           echo "OK: Python, FastAPI/Uvicorn, and package import working."
 
       - name: Sanity guard — uvicorn help
