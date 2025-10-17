@@ -28,7 +28,7 @@ RUN pip install --upgrade pip && pip install .
 
 # Runtime env
 ENV HOST=0.0.0.0 \
-    PORT=9090 \
+    PORT=8080 \
     UVICORN_LOG_LEVEL=info
 
 EXPOSE 8080
