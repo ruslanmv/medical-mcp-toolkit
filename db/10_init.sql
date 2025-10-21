@@ -1,9 +1,18 @@
 -- =============================================================================
--- medical-mcp-toolkit: PostgreSQL Database Schema (PRODUCTION)
+-- medical-ai-hospital: PostgreSQL Database Schema (PRODUCTION)
 -- File: db/10_init.sql
+--
+-- Fixes:
+--  - Replaces invalid UNIQUE table constraint on drug_interactions using
+--    expressions (LEAST/GREATEST) with a proper UNIQUE EXPRESSION INDEX.
+--  - Ensures schema and search_path are explicit.
 -- =============================================================================
 
 BEGIN;
+
+-- Ensure schema exists and set search_path
+CREATE SCHEMA IF NOT EXISTS public;
+SET search_path TO public;
 
 -- -----------------------------------------------------------------------------
 -- Extensions
@@ -120,14 +129,14 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- Auth sessions (token stored hashed)
 CREATE TABLE IF NOT EXISTS auth_sessions (
-  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id          UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id            UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   session_token_hash TEXT NOT NULL UNIQUE, -- store hash only
-  ip_address       INET,
-  user_agent       TEXT,
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-  expires_at       TIMESTAMPTZ NOT NULL,
-  revoked_at       TIMESTAMPTZ
+  ip_address         INET,
+  user_agent         TEXT,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at         TIMESTAMPTZ NOT NULL,
+  revoked_at         TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS auth_sessions_user_idx
   ON auth_sessions (user_id, expires_at DESC);
@@ -336,9 +345,14 @@ CREATE TABLE IF NOT EXISTS drug_interactions (
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ✅ Correct, idempotent UNIQUE EXPRESSION INDEX (not a table constraint)
 CREATE UNIQUE INDEX IF NOT EXISTS ux_drug_interactions_pair
-  ON drug_interactions (LEAST(primary_drug_id, interacting_drug_id),
-                        GREATEST(primary_drug_id, interacting_drug_id));
+  ON drug_interactions (
+    LEAST(primary_drug_id, interacting_drug_id),
+    GREATEST(primary_drug_id, interacting_drug_id)
+  );
+
 DROP TRIGGER IF EXISTS trg_drug_interactions_updated_at ON drug_interactions;
 CREATE TRIGGER trg_drug_interactions_updated_at
 BEFORE UPDATE ON drug_interactions
@@ -359,6 +373,7 @@ CREATE TABLE IF NOT EXISTS appointments (
   CONSTRAINT chk_appt_time CHECK (scheduled_end >= scheduled_start)
 );
 CREATE INDEX IF NOT EXISTS appt_patient_time_idx ON appointments (patient_id, scheduled_start DESC);
+
 DROP TRIGGER IF EXISTS trg_appointments_updated_at ON appointments;
 CREATE TRIGGER trg_appointments_updated_at
 BEFORE UPDATE ON appointments
@@ -382,6 +397,7 @@ CREATE TABLE IF NOT EXISTS encounters (
   CONSTRAINT chk_encounter_time CHECK (ended_at IS NULL OR ended_at >= started_at)
 );
 CREATE INDEX IF NOT EXISTS encounters_patient_time_idx ON encounters (patient_id, started_at DESC);
+
 DROP TRIGGER IF EXISTS trg_encounters_updated_at ON encounters;
 CREATE TRIGGER trg_encounters_updated_at
 BEFORE UPDATE ON encounters
@@ -399,6 +415,7 @@ CREATE TABLE IF NOT EXISTS encounter_notes (
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS encounter_notes_enc_idx ON encounter_notes (encounter_id, created_at DESC);
+
 DROP TRIGGER IF EXISTS trg_encounter_notes_updated_at ON encounter_notes;
 CREATE TRIGGER trg_encounter_notes_updated_at
 BEFORE UPDATE ON encounter_notes
@@ -406,16 +423,16 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- Patient Documents (metadata; actual bytes in object storage)
 CREATE TABLE IF NOT EXISTS documents (
-  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  patient_id         UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-  encounter_id       UUID REFERENCES encounters(id) ON DELETE SET NULL,
-  file_name          TEXT NOT NULL,
-  content_type       TEXT,
-  storage_url        TEXT NOT NULL,      -- e.g., s3://... or https://...
-  size_bytes         BIGINT,
-  sha256_hex         TEXT,               -- integrity check (optional)
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patient_id          UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  encounter_id        UUID REFERENCES encounters(id) ON DELETE SET NULL,
+  file_name           TEXT NOT NULL,
+  content_type        TEXT,
+  storage_url         TEXT NOT NULL,      -- e.g., s3://... or https://...
+  size_bytes          BIGINT,
+  sha256_hex          TEXT,               -- integrity check (optional)
   uploaded_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
-  created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS documents_patient_time_idx ON documents (patient_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS documents_encounter_idx    ON documents (encounter_id);
